@@ -1,0 +1,90 @@
+-- 03_int_build_and_backfill.sql
+-- Build the INT layer and perform an initial full backfill from RAW.RAW_311_CSV.
+
+USE DATABASE NYC_311;
+
+-- Create INT schema (idempotent)
+CREATE OR REPLACE SCHEMA INT;
+
+-- INT table: cleaned, typed version of RAW_311_CSV
+CREATE OR REPLACE TABLE INT.INT_311_SERVICE_REQUESTS (
+    UNIQUE_KEY            NUMBER,
+    CREATED_AT            TIMESTAMP_NTZ,
+    CLOSED_AT             TIMESTAMP_NTZ,
+    CREATED_DATE          DATE,
+    CLOSED_DATE           DATE,
+    AGENCY                VARCHAR,
+    AGENCY_NAME           VARCHAR,
+    COMPLAINT_TYPE        VARCHAR,
+    DESCRIPTOR            VARCHAR,
+    STATUS                VARCHAR,
+    BOROUGH               VARCHAR,
+    INCIDENT_ZIP          VARCHAR,
+    LATITUDE              FLOAT,
+    LONGITUDE             FLOAT,
+    RESPONSE_TIME_HOURS   FLOAT,
+    IS_CLOSED             BOOLEAN
+);
+
+-- Initial backfill: transform all rows from RAW into INT
+INSERT INTO INT.INT_311_SERVICE_REQUESTS (
+    UNIQUE_KEY,
+    CREATED_AT,
+    CLOSED_AT,
+    CREATED_DATE,
+    CLOSED_DATE,
+    AGENCY,
+    AGENCY_NAME,
+    COMPLAINT_TYPE,
+    DESCRIPTOR,
+    STATUS,
+    BOROUGH,
+    INCIDENT_ZIP,
+    LATITUDE,
+    LONGITUDE,
+    RESPONSE_TIME_HOURS,
+    IS_CLOSED
+)
+SELECT
+    TRY_TO_NUMBER(UNIQUE_KEY_STR)                                        AS UNIQUE_KEY,
+    TRY_TO_TIMESTAMP_NTZ(CREATED_DATE_STR, 'MM/DD/YYYY HH12:MI:SS AM')   AS CREATED_AT,
+    TRY_TO_TIMESTAMP_NTZ(CLOSED_DATE_STR,  'MM/DD/YYYY HH12:MI:SS AM')   AS CLOSED_AT,
+    TRY_TO_DATE(CREATED_DATE_STR, 'MM/DD/YYYY HH12:MI:SS AM')            AS CREATED_DATE,
+    TRY_TO_DATE(CLOSED_DATE_STR,  'MM/DD/YYYY HH12:MI:SS AM')            AS CLOSED_DATE,
+    AGENCY,
+    AGENCY_NAME,
+    COMPLAINT_TYPE,
+    DESCRIPTOR,
+    STATUS,
+    BOROUGH,
+    INCIDENT_ZIP,
+    LATITUDE,
+    LONGITUDE,
+    CASE
+        WHEN TRY_TO_TIMESTAMP_NTZ(CREATED_DATE_STR, 'MM/DD/YYYY HH12:MI:SS AM') IS NOT NULL
+         AND TRY_TO_TIMESTAMP_NTZ(CLOSED_DATE_STR,  'MM/DD/YYYY HH12:MI:SS AM') IS NOT NULL
+        THEN
+            DATEDIFF(
+                'second',
+                TRY_TO_TIMESTAMP_NTZ(CREATED_DATE_STR, 'MM/DD/YYYY HH12:MI:SS AM'),
+                TRY_TO_TIMESTAMP_NTZ(CLOSED_DATE_STR,  'MM/DD/YYYY HH12:MI:SS AM')
+            ) / 3600.0
+        ELSE NULL
+    END                                                                  AS RESPONSE_TIME_HOURS,
+    CASE
+        WHEN TRY_TO_TIMESTAMP_NTZ(CLOSED_DATE_STR,  'MM/DD/YYYY HH12:MI:SS AM') IS NOT NULL THEN TRUE
+        ELSE FALSE
+    END                                                                  AS IS_CLOSED
+FROM RAW.RAW_311_CSV;
+
+-- Optional sanity checks
+SELECT 
+    MIN(CREATED_DATE) AS MIN_CREATED_DATE,
+    MAX(CREATED_DATE) AS MAX_CREATED_DATE,
+    COUNT(*)          AS ROWS_CNT
+FROM INT.INT_311_SERVICE_REQUESTS;
+
+SELECT *
+FROM INT.INT_311_SERVICE_REQUESTS
+ORDER BY CREATED_DATE DESC
+LIMIT 100;
