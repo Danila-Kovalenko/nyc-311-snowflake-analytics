@@ -4,10 +4,10 @@ import requests
 import snowflake.connector
 
 # --------------- SNOWFLAKE SETTINGS ---------------
-SNOWFLAKE_ACCOUNT   = "HKHBZCU-XW96445"      # <-- СЮДА твой account, типа "xy12345.eu-central-1"
-SNOWFLAKE_USER      = "DANHOEFFLIN"         # <-- Твой логин в Snowflake
-SNOWFLAKE_PASSWORD  = "88005553535Poz"   # Your Snowflake password
-SNOWFLAKE_WAREHOUSE = "COMPUTE_WH"      # Your Snowflake warehouse name
+SNOWFLAKE_ACCOUNT   = "---"      # <-- СЮДА твой account, типа "xy12345.eu-central-1"
+SNOWFLAKE_USER      = "---"         # <-- Твой логин в Snowflake
+SNOWFLAKE_PASSWORD  = "---"   # Your Snowflake password
+SNOWFLAKE_WAREHOUSE = "---"      # Your Snowflake warehouse name
 SNOWFLAKE_DATABASE  = "NYC_311"
 SNOWFLAKE_SCHEMA    = "RAW"
 # -------------------------------------------------
