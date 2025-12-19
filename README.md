@@ -1,142 +1,123 @@
 # nyc-311-snowflake-analytics
 
-End-to-end **Data Engineering + Analytics** portfolio project based on **NYC 311 Service Requests**:
-- Ingest daily data from a public API into **Snowflake RAW**
-- Transform into **INT** (typed, enriched)
-- Build **PRES** marts for BI + mapping
-- Orchestrate daily pipelines with **Snowflake Tasks**
-- Train a **Snowflake ML Forecast** model and store predictions
-- Visualize in **Power BI**
+Portfolio project: **end-to-end data pipeline + BI + forecasting** using **NYC 311 Service Requests** data.
 
-Repository: https://github.com/Danila-Kovalenko/nyc-311-snowflake-analytics
+This repo demonstrates a realistic analytics workflow:
+- **RAW**: ingest data (historical CSV or daily API)
+- **INT**: clean & type data, add derived fields
+- **PRES**: build BI-ready marts + Power BI views
+- **Automation**: daily Snowflake Tasks
+- **Forecasting**: Snowflake ML time-series forecast + backtesting
+- **Power BI**: map and line charts (with screenshots)
 
 ---
 
 ## Repository structure
 
-- **[`sql/`](./sql/)** — Snowflake pipeline scripts (RAW → INT → PRES, tasks, forecasting)  
-  → Readme: **[`sql/README.md`](./sql/README.md)**
-- **[`python/`](./python/)** — local utilities / loaders used during development  
-  → Readme: **[`python/README.md`](./python/README.md)**
-- **[`powerbi/`](./powerbi/)** — Power BI report/dashboard assets  
-  → Readme: **[`powerbi/README.md`](./powerbi/README.md)**
+- **[`sql/`](./sql/)** — Snowflake SQL scripts (RAW → INT → PRES, tasks, forecasting, evaluation)  
+  → docs: [`sql/README.md`](./sql/README.md)
+
+- **[`python/`](./python/)** — local helper scripts (bulk CSV loading / splitting; dev utilities)  
+  → docs: [`python/README.md`](./python/README.md)
+
+- **[`powerbi/`](./powerbi/)** — Power BI reports (`.pbix`) + screenshots (`.png`)  
+  → docs: [`powerbi/README.md`](./powerbi/README.md)
 
 ---
 
 ## Data source
 
-**NYC Open Data — 311 Service Requests**  
-- Daily ingestion uses Socrata API endpoint (JSON):  
-  `https://data.cityofnewyork.us/resource/erm2-nwe9.json`
-
-The project demonstrates both approaches:
-1) **Production-like daily ingestion** (API → Snowflake via Snowpark Python SP + Task)  
-2) **Optional historical bulk load** from a large CSV into an internal stage and then `COPY INTO` RAW
+NYC Open Data (Socrata):
+- API (JSON): `https://data.cityofnewyork.us/resource/erm2-nwe9.json`
+- Historical CSV export is also available on NYC Open Data (used for the bulk load scenario)
 
 ---
 
-## Architecture (RAW → INT → PRES)
+## Architecture (Snowflake layers)
 
 ### RAW (landing)
-**Goal:** keep data close to source, minimal transformations  
-- Table: `RAW.RAW_311_CSV`  
-- Ingestion options:
-  - API ingestion (daily): [`sql/data_to_raw.sql`](./sql/data_to_raw.sql)
-  - CSV bulk load (optional): [`sql/delete.sql`](./sql/delete.sql)
+Goal: store data close to the source (minimal transforms).
+- Table: `RAW.RAW_311_CSV`
+- Ingest options:
+  - Historical **CSV bulk load** (Stage → COPY INTO): [`sql/01_raw_historical_load_from_csv.sql`](./sql/01_raw_historical_load_from_csv.sql)
+  - Daily **API ingestion** (Snowpark Python SP + Task): [`sql/02_raw_http_ingest_snowpark.sql`](./sql/02_raw_http_ingest_snowpark.sql)
 
-### INT (typed, enriched)
-**Goal:** correct types, compute derived fields
+### INT (clean + typed)
+Goal: parse datetimes, enforce types, compute derived fields.
 - Table: `INT.INT_311_SERVICE_REQUESTS`
-- Parsing timestamps / dates, computing:
+- Adds:
   - `RESPONSE_TIME_HOURS`
   - `IS_CLOSED`
-- Script: [`sql/INT_Worksheet.sql`](./sql/INT_Worksheet.sql)
+- Script: [`sql/03_int_build_and_backfill.sql`](./sql/03_int_build_and_backfill.sql)
 
-### PRES (analytics marts)
-**Goal:** aggregated tables for BI / dashboards
+### PRES (marts for analytics + BI)
+Goal: aggregate data for dashboarding.
 - Table: `PRES.PRES_311_DAILY_METRICS`
-- View for Power BI mapping:
-  - `PRES.VW_PBI_DAILY_BOROUGH_METRICS` (includes `BOROUGH_LOCATION`)
-- Script: [`sql/PRES.sql`](./sql/PRES.sql)
-
----
-
-## Orchestration (daily automation)
-
-### Daily API ingestion task
-Creates external access integration + Snowpark procedure + daily task:
-- Script: [`sql/data_to_raw.sql`](./sql/data_to_raw.sql)
-- Main objects created:
-  - `RAW.SP_INGEST_311_YESTERDAY_HTTP()`
-  - `RAW.TASK_311_INGEST_HTTP`
-
-### Daily ETL task (RAW → INT → PRES)
-Loads yesterday’s rows into INT and refreshes PRES marts for yesterday:
-- Script: [`sql/tasks.sql`](./sql/tasks.sql)
-- Main objects created:
-  - `INT.SP_LOAD_311_FROM_RAW_YESTERDAY()`
-  - `PRES.SP_REFRESH_311_PRES_FOR_YESTERDAY()`
-  - `PRES.TASK_311_DAILY_ETL`
+- Power BI view:
+  - `PRES.VW_PBI_DAILY_BOROUGH_METRICS` (includes `BOROUGH_LOCATION` for maps)
+- Script: [`sql/04_pres_metrics_and_pbi_views.sql`](./sql/04_pres_metrics_and_pbi_views.sql)
 
 ---
 
 ## Forecasting (Snowflake ML)
 
-This project includes a baseline time-series forecast of daily total 311 requests:
+- Build daily totals base: `PRES.PRES_311_DAILY_FORECAST_BASE`
+- Train Snowflake ML Forecast model
+- Write predictions to `PRES_311_FORECAST_RESULTS`
+- Script: [`sql/05_forecast_daily_requests.sql`](./sql/05_forecast_daily_requests.sql)
 
-- Base table: `PRES.PRES_311_DAILY_FORECAST_BASE`
-- Model: `SNOWFLAKE.ML.FORECAST NYC311_DAILY_REQUESTS_MODEL`
-- Predictions table: `PRES_311_FORECAST_RESULTS` (created by script)
-
-Script:
-- [`sql/Daily_Forecast.sql`](./sql/Daily_Forecast.sql)
-
-> Note: This is a **baseline** forecast using historical daily totals. Accuracy can be improved by adding exogenous features and/or segmentation (borough/agency).
+Backtesting / evaluation:
+- Compute MAE / RMSE / MAPE on a 60-day holdout window  
+- Script: [`sql/07_forecast_evaluation.sql`](./sql/07_forecast_evaluation.sql)
 
 ---
 
-## Power BI dashboard
+## Automation (daily pipeline)
 
-The Power BI report uses the curated view:
-- `PRES.VW_PBI_DAILY_BOROUGH_METRICS`
+Daily ETL procedures + task:
+- Script: [`sql/06_tasks_daily_etl.sql`](./sql/06_tasks_daily_etl.sql)
+- Runs every day:
+  1) load yesterday RAW → INT
+  2) refresh yesterday PRES marts + forecast base
 
-This view is created in:
-- [`sql/PRES.sql`](./sql/PRES.sql)
-
-Power BI folder:
-- [`powerbi/`](./powerbi/)  
-  → Readme: [`powerbi/README.md`](./powerbi/README.md)
-
----
-
-## Quick start (recommended run order)
-
-### Option A — Daily ingestion from API (production-like)
-1. Run: [`sql/data_to_raw.sql`](./sql/data_to_raw.sql)  
-2. Run: [`sql/INT_Worksheet.sql`](./sql/INT_Worksheet.sql) (first backfill from current RAW)  
-3. Run: [`sql/PRES.sql`](./sql/PRES.sql)  
-4. Run: [`sql/Daily_Forecast.sql`](./sql/Daily_Forecast.sql)  
-5. Run: [`sql/tasks.sql`](./sql/tasks.sql)  
-
-### Option B — Historical bulk load from large CSV (optional)
-1. Upload the CSV into an internal stage: `PUT ... @NYC_311_STAGE` (outside this repo)  
-2. Run: [`sql/delete.sql`](./sql/delete.sql) (creates RAW table + COPY INTO)  
-3. Continue with steps 2–5 from Option A
+Daily API ingest task (optional, if you use API ingestion):
+- Script: [`sql/02_raw_http_ingest_snowpark.sql`](./sql/02_raw_http_ingest_snowpark.sql)
 
 ---
 
-## What this project demonstrates
+## Quick start (recommended)
 
-- **Snowflake data modeling**: RAW → INT → PRES layering
-- **Incremental loading**: “yesterday only” logic for daily pipeline
-- **Orchestration**: Snowflake Tasks + stored procedures
-- **BI-ready marts**: daily metrics and mapping-friendly fields
-- **ML integration**: training and generating forecasts inside Snowflake
-- **Clean repo organization**: separated SQL / Python / Power BI components
+### Option A — Historical CSV bulk load + daily ETL
+1. Run: [`sql/01_raw_historical_load_from_csv.sql`](./sql/01_raw_historical_load_from_csv.sql)
+2. Run: [`sql/03_int_build_and_backfill.sql`](./sql/03_int_build_and_backfill.sql)
+3. Run: [`sql/04_pres_metrics_and_pbi_views.sql`](./sql/04_pres_metrics_and_pbi_views.sql)
+4. Run: [`sql/05_forecast_daily_requests.sql`](./sql/05_forecast_daily_requests.sql)
+5. Run: [`sql/07_forecast_evaluation.sql`](./sql/07_forecast_evaluation.sql)
+6. Run (enable daily task): [`sql/06_tasks_daily_etl.sql`](./sql/06_tasks_daily_etl.sql)
+
+### Option B — Daily API ingestion + daily ETL
+1. Run: [`sql/02_raw_http_ingest_snowpark.sql`](./sql/02_raw_http_ingest_snowpark.sql)
+2. Run: [`sql/03_int_build_and_backfill.sql`](./sql/03_int_build_and_backfill.sql)
+3. Run: [`sql/04_pres_metrics_and_pbi_views.sql`](./sql/04_pres_metrics_and_pbi_views.sql)
+4. Run: [`sql/05_forecast_daily_requests.sql`](./sql/05_forecast_daily_requests.sql)
+5. Run: [`sql/06_tasks_daily_etl.sql`](./sql/06_tasks_daily_etl.sql)
 
 ---
 
-## License / notes
+## Power BI
 
-This is a learning/portfolio project based on open public NYC data.
-No private credentials or secrets are included in the repository.
+Power BI reports and screenshots are in:
+- [`powerbi/`](./powerbi/) → [`powerbi/README.md`](./powerbi/README.md)
+
+Screenshots (PNG):
+- Map: [`powerbi/map.png`](./powerbi/map.png)
+- Line chart: [`powerbi/line_diagram.png`](./powerbi/line_diagram.png)
+- Forecast line chart: [`powerbi/forecast_line_diagram.png`](./powerbi/forecast_line_diagram.png)
+
+---
+
+## Security note
+
+This repository should not contain real credentials.
+- Do **not** commit Snowflake passwords.
+- Prefer environment variables / local config files that are excluded via `.gitignore`.
